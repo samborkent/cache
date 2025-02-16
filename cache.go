@@ -45,37 +45,12 @@ func (c *Cache[K, V]) Put(key K, value *V) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	// Add clean-up function which should be triggered when the value pointer gets cleaned-up by the garbage collector.
-	defer func() {
-		runtime.AddCleanup(value, func(kh uint64) {
-			c.lock.Lock()
-			defer c.lock.Unlock()
-
-			// Check is the key hash still exists in the cache.
-			index := slices.Index(c.keyHashes, kh)
-			if index == -1 {
-				return
-			}
-
-			// Check if the value is indeed nil. If not, then the cache value was already overwritten.
-			value := c.values[index].Value()
-			if value != nil {
-				return
-			}
-
-			// Zero key hash so it can be reused.
-			c.keyHashes[index] = 0
-		}, keyHash)
-	}()
-
 	// Find key hash in cache.
 	index := slices.Index(c.keyHashes, keyHash)
-
 	if index == -1 {
 		// Key hash does not exist yet.
 		// Check if there are any zero values.
 		zeroIndex := slices.Index(c.keyHashes, 0)
-
 		if zeroIndex == -1 {
 			// No zero value found
 			if c.maxSize != 0 && len(c.keyHashes) >= c.maxSize {
@@ -86,6 +61,8 @@ func (c *Cache[K, V]) Put(key K, value *V) {
 				c.keyHashes[index] = keyHash
 				c.values[index] = valueRef
 
+				runtime.AddCleanup(value, c.invalidate, index)
+
 				return
 			}
 
@@ -93,12 +70,16 @@ func (c *Cache[K, V]) Put(key K, value *V) {
 			c.keyHashes = append(c.keyHashes, keyHash)
 			c.values = append(c.values, valueRef)
 
+			runtime.AddCleanup(value, c.invalidate, len(c.keyHashes)-1)
+
 			return
 		}
 
 		// A zero value was found, overwrite.
 		c.keyHashes[zeroIndex] = keyHash
 		c.values[zeroIndex] = valueRef
+
+		runtime.AddCleanup(value, c.invalidate, zeroIndex)
 
 		return
 	}
@@ -125,12 +106,9 @@ func (c *Cache[K, V]) Get(key K) (V, bool) {
 	value := c.values[index].Value()
 	if value == nil {
 		// Zero key hash, so its position in memory can be reused.
-		defer func() {
-			c.lock.Lock()
-			defer c.lock.Unlock()
-
-			c.keyHashes[index] = 0
-		}()
+		c.lock.Lock()
+		c.keyHashes[index] = 0
+		c.lock.Unlock()
 
 		// Value pointer was cleaned up by garbage collector.
 		return *new(V), false
@@ -140,9 +118,22 @@ func (c *Cache[K, V]) Get(key K) (V, bool) {
 }
 
 func (c *Cache[K, V]) Len() int {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
 	return len(c.keyHashes)
 }
 
 func (c *Cache[K, V]) Cap() int {
 	return c.maxSize
+}
+
+func (c *Cache[K, V]) invalidate(index int) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	// Check if the value is indeed nil. If not, then the cache value was already overwritten.
+	if c.values[index].Value() == nil {
+		c.keyHashes[index] = 0
+	}
 }
