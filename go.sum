@@ -1,0 +1,10 @@
+github.com/samborkent/check v0.0.0-20250216101452-9e0175aea5bf h1:OnAAr3VJGP10ZDDT4q30xNPmBc1Zop+zu7wZAHoD3go=
+github.com/samborkent/check v0.0.0-20250216101452-9e0175aea5bf/go.mod h1:FyWiejVBkTbW12fRo7GGNbb6QkEpXw9Ggz4vzfuposA=
+github.com/samborkent/check v0.0.0-20250216103451-ad4da0ee17c8 h1:29WQMr7T8kmqwp2/6RN3WL3Y1+LWjFGy+vPDde/pe1Q=
+github.com/samborkent/check v0.0.0-20250216103451-ad4da0ee17c8/go.mod h1:eUJCEf9yFoehMZQnqnTUx1Pb22JuwJcJFmsvChFNIkY=
+github.com/samborkent/check v0.0.0-20250216103840-eaa4d4426057 h1:xXsaw7yt92Fe9YGQ/R1XXVf5051tYSwCvJABSQyM//k=
+github.com/samborkent/check v0.0.0-20250216103840-eaa4d4426057/go.mod h1:eUJCEf9yFoehMZQnqnTUx1Pb22JuwJcJFmsvChFNIkY=
+golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac h1:l5+whBCLH3iH2ZNHYLbAe58bo7yrN4mVcnkHDYz5vvs=
+golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac/go.mod h1:hH+7mtFmImwwcMvScyxUhjuVHR3HGaDPMn9rMSUUbxo=
+golang.org/x/exp v0.0.0-20250215185904-eff6e970281f h1:oFMYAjX0867ZD2jcNiLBrI9BdpmEkvPyi5YrBGXbamg=
+golang.org/x/exp v0.0.0-20250215185904-eff6e970281f/go.mod h1:BHOTPb3L19zxehTsLoJXVaTktb06DFgmdW6Wb9s8jqk=
