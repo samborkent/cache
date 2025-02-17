@@ -43,8 +43,13 @@ func TestCache(t *testing.T) {
 	store.Put(key2, object2)
 
 	runtime.GC()
+	runtime.KeepAlive(object2)
 
-	value2, ok := store.Get(key2)
+	value, ok = store.Get(key)
 	check.True(t, !ok)
-	check.AnyZero(t, value2)
+	check.AnyZero(t, value)
+
+	value, ok = store.Get(key2)
+	check.True(t, ok)
+	check.Equal(t, value, *object2)
 }

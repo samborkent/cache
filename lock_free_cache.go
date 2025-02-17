@@ -2,6 +2,7 @@ package cache
 
 import (
 	"hash/maphash"
+	"math"
 	"math/rand/v2"
 	"sync"
 	"sync/atomic"
@@ -9,6 +10,8 @@ import (
 	"unsafe"
 	"weak"
 )
+
+const randomEntryRetries = 3
 
 type LockFreeCache[K comparable, V any] struct {
 	entries        []atomic.Pointer[cacheEntry[V]]
@@ -39,7 +42,7 @@ func NewLockFreeCache[K comparable, V any](size int) *LockFreeCache[K, V] {
 		},
 		seed:           maphash.MakeSeed(),
 		size:           size,
-		hashProbeDepth: min(size%4, 1),
+		hashProbeDepth: min(1, int(math.Log2(float64(size)))),
 	}
 
 	seed := uint64(time.Now().UnixNano())
@@ -59,13 +62,13 @@ func (c *LockFreeCache[K, V]) Put(key K, value *V) {
 
 	// Get cache entry from pool.
 	newEntry, _ := c.pool.Get().(*cacheEntry[V])
+	*newEntry = cacheEntry[V]{}
 	newEntry.keyHash = keyHash
 	newEntry.valueRef = weak.Make(value)
 
 	// Try to replace existing entry up to hash probe depth.
 	for i := range c.hashProbeDepth {
-		// Use key hash probing.
-		index := int((keyHash + uint64(i)) % uint64(c.size))
+		index := probeIndex(keyHash, i, c.size)
 
 		entry := c.entries[index].Load()
 		if entry != nil && entry.keyHash == keyHash {
@@ -79,8 +82,7 @@ func (c *LockFreeCache[K, V]) Put(key K, value *V) {
 
 	// Try to reclaim empty cache slot.
 	for i := range c.size {
-		// Use key hash probing.
-		index := int((keyHash + uint64(i)) % uint64(c.size))
+		index := probeIndex(keyHash, i, c.size)
 
 		entry := c.entries[index].Load()
 		if entry == nil || entry.keyHash == keyHash ||
@@ -93,14 +95,19 @@ func (c *LockFreeCache[K, V]) Put(key K, value *V) {
 		}
 	}
 
+	rng := c.rng.Load()
+
 	// Overwrite random cache slot.
-	for {
-		randomIndex := int(c.rng.Load().Uint64() % uint64(c.size))
+	for range randomEntryRetries {
+		randomIndex := int(rng.Uint64() % uint64(c.size))
 
 		if c.entries[randomIndex].CompareAndSwap(c.entries[randomIndex].Load(), newEntry) {
 			return
 		}
 	}
+
+	// Fallback to atomic store.
+	c.entries[rng.Uint64()%uint64(c.size)].Store(newEntry)
 }
 
 func (c *LockFreeCache[K, V]) Get(key K) (V, bool) {
@@ -111,9 +118,8 @@ func (c *LockFreeCache[K, V]) Get(key K) (V, bool) {
 
 	keyHash := maphash.Comparable(c.seed, key)
 
-	for i := range c.size {
-		// Use key hash probing.
-		index := int((keyHash + uint64(i)) % uint64(c.size))
+	for i := range c.hashProbeDepth {
+		index := probeIndex(keyHash, i, c.size)
 
 		entry := c.entries[index].Load()
 		if entry == nil || entry.keyHash == 0 {
@@ -140,16 +146,6 @@ func (c *LockFreeCache[K, V]) Get(key K) (V, bool) {
 	return *new(V), false
 }
 
-func (c *LockFreeCache[K, V]) invalidate(entry *cacheEntry[V], index int) {
-	entry.keyHash = 0
-
-	// Invalidate cache entry if underlying value was cleaned up by garbage collector.
-	if c.entries[index].CompareAndSwap(entry, entry) {
-		// Add invalidated cache entry back to the pool.
-		c.pool.Put(any(entry))
-	}
-}
-
 func (c *LockFreeCache[K, V]) Len() int {
 	count := 0
 
@@ -165,4 +161,18 @@ func (c *LockFreeCache[K, V]) Len() int {
 
 func (c *LockFreeCache[K, V]) Cap() int {
 	return c.size
+}
+
+func (c *LockFreeCache[K, V]) invalidate(entry *cacheEntry[V], index int) {
+	// Invalidate cache entry if underlying value was cleaned up by garbage collector.
+	if c.entries[index].CompareAndSwap(entry, nil) {
+		// Add invalidated cache entry back to the pool.
+		entry.keyHash = 0
+		entry.valueRef = weak.Pointer[V]{}
+		c.pool.Put(any(entry))
+	}
+}
+
+func probeIndex(keyHash uint64, i, size int) int {
+	return int((keyHash + uint64(i)*(keyHash>>32|keyHash<<32)) % uint64(size))
 }
